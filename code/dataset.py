@@ -116,6 +116,9 @@ class LLM4RecDataset(Dataset):
         user_id = int(user)
         target_id = int(item_list[-1])
         item_id = " ".join(item_list[:-1])
+        
+        # Get interaction history item IDs (not including target)
+        history_ids = [int(item_id) for item_id in item_list[:-1]]
 
         # ------------------ codebook id ------------------
         codebook_sample = self.codebook_data[index].split(" ")
@@ -131,7 +134,7 @@ class LLM4RecDataset(Dataset):
         else:
             NotImplementedError
     
-        return user_id, item_id, target_id, user_cb_id, item_cb_id_list, target_cb_id
+        return user_id, item_id, target_id, user_cb_id, item_cb_id_list, target_cb_id, history_ids
 
 
 
@@ -155,6 +158,10 @@ class LLM4RecTrainDataset(Dataset):
         # valid_item_list = " ".join(item_list[:-1])
         train_target_id = int(item_list[-2])
         valid_target_id = int(item_list[-1])
+        
+        # Get interaction history item IDs (not including targets)
+        train_history_ids = [int(item_id) for item_id in item_list[:-2]]
+        valid_history_ids = [int(item_id) for item_id in item_list[:-1]]
 
         # ------------------ codebook id ------------------
         codebook_sample = self.codebook_data[index].split(" ")
@@ -177,4 +184,4 @@ class LLM4RecTrainDataset(Dataset):
         else:
             NotImplementedError
 
-        return user_id, train_target_id, valid_target_id, user_cb_id, train_item_cb_list, train_target_cb_id, valid_item_cb_list, valid_target_cb_id
+        return user_id, train_target_id, valid_target_id, user_cb_id, train_item_cb_list, train_target_cb_id, valid_item_cb_list, valid_target_cb_id, train_history_ids, valid_history_ids

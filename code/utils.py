@@ -78,6 +78,35 @@ def group_model_params(model1, model2, decay):
 	return grouped_params
 
 
+def group_model_params_fusion(model1, model2, fusion_module, decay):
+	"""Group parameters for T5, projection layer, and fusion module"""
+	grouped_params = [
+            {
+                "params": [
+                    p
+                    for n, p in model1.named_parameters()
+                ],
+                "weight_decay": decay,
+            },
+            {
+                "params": [
+                    p
+                    for n, p in model2.named_parameters()
+                ],
+                "weight_decay": decay,
+            },
+            {
+                "params": [
+                    p
+                    for n, p in fusion_module.named_parameters()
+                ],
+                "weight_decay": decay,
+            },
+        ]
+
+	return grouped_params
+
+
 def group_model_emb_params(model1, model2, emb, decay):
 	grouped_params = [
             {
@@ -259,6 +288,29 @@ def read_cf_embeddings(model_name, checkpoint_name):
 def get_target_emb(item_emb, labels):
 	target = item_emb[labels]
 	return target
+
+
+def get_history_item_emb(item_emb, history_ids_batch):
+	"""
+	Aggregate item embeddings from interaction history.
+	Args:
+		item_emb: [num_items, emb_dim] - all item embeddings
+		history_ids_batch: list of lists - each inner list contains history item IDs for one sample
+	Returns:
+		aggregated_emb: [batch_size, emb_dim] - mean-pooled embeddings of history items
+	"""
+	batch_embeddings = []
+	for history_ids in history_ids_batch:
+		if len(history_ids) > 0:
+			# Get embeddings for all history items and take mean
+			history_embs = item_emb[history_ids]  # [num_history_items, emb_dim]
+			aggregated = torch.mean(history_embs, dim=0)  # [emb_dim]
+		else:
+			# If no history, use zero embedding
+			aggregated = torch.zeros_like(item_emb[0])
+		batch_embeddings.append(aggregated)
+	
+	return torch.stack(batch_embeddings, dim=0)  # [batch_size, emb_dim]
 
 
 def codebook_tokens(n_book, n_token):

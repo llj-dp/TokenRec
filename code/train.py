@@ -95,7 +95,22 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
         t5 = T5Model.from_pretrained('../checkpoints/backbone/' + data_name)
         tokenizer = AutoTokenizer.from_pretrained("../checkpoints/backbone/" + data_name, legacy=False)
         linear_projection.load_state_dict(torch.load('../checkpoints/backbone/' + data_name +'/projection.pt'))
-        grouped_params = utils.group_model_params(t5, linear_projection, decay=args.decay)
+        
+        # Initialize fusion module
+        fusion_module = model.GNNLLMFusion(
+            llm_dim=item_emb.shape[1], 
+            gnn_dim=item_emb.shape[1],
+            hidden_dim=128,
+            num_heads=4
+        )
+        # Try to load fusion module if it exists
+        try:
+            fusion_module.load_state_dict(torch.load('../checkpoints/backbone/' + data_name +'/fusion.pt'))
+            print('Loaded existing fusion module')
+        except:
+            print('Initializing new fusion module')
+        
+        grouped_params = utils.group_model_params_fusion(t5, linear_projection, fusion_module, decay=args.decay)
     # read pretrained llms
     else:
         linear_projection = model.projection(input_dim=512, output_dim=item_emb.shape[1], target_length=args.target_length)
@@ -105,7 +120,17 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
         num_added_toks = tokenizer.add_tokens(add_tokens)  # add tne tokens to the tokenizer vocabulary
         t5.resize_token_embeddings(len(tokenizer))  # add new, random embeddings for the new tokens
         print('added token number =', num_added_toks)
-        grouped_params = utils.group_model_params(t5, linear_projection, decay=args.decay)
+        
+        # Initialize fusion module
+        fusion_module = model.GNNLLMFusion(
+            llm_dim=item_emb.shape[1], 
+            gnn_dim=item_emb.shape[1],
+            hidden_dim=128,
+            num_heads=4
+        )
+        print('Initialized fusion module for deep GNN-LLM integration')
+        
+        grouped_params = utils.group_model_params_fusion(t5, linear_projection, fusion_module, decay=args.decay)
 
     optimizer = torch.optim.AdamW(grouped_params, lr=args.lr)
     # loss_func = torch.nn.NLLLoss(weight=None, size_average=None, ignore_index=-100, reduce=None, reduction='mean')
@@ -113,6 +138,7 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
     loss_func = torch.nn.CosineEmbeddingLoss()
     t5.to(device)
     linear_projection.to(device)
+    fusion_module.to(device)
 
     # ------------------------ training --------------------------------
     max_epoch = args.epochs
@@ -122,16 +148,24 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
     for epoch in range(max_epoch):
         t5.train()
         linear_projection.train()
+        fusion_module.train()
         loss_record = 0
         batch_record = 0
         for i, sample in enumerate(train_rec_loader):
             # train
-            user_id, train_target_id, valid_target_id, user_cb_id, train_item_cb_id, train_target_cb_id, valid_item_cb_id, valid_target_cb_id = sample  # tuple text sequence [batch]
+            user_id, train_target_id, valid_target_id, user_cb_id, train_item_cb_id, train_target_cb_id, valid_item_cb_id, valid_target_cb_id, train_history_ids, valid_history_ids = sample  # tuple text sequence [batch]
             train_batch = len(train_item_cb_id)
             input_sentences = utils.prompt(user_cb_id, train_item_cb_id)
             if len(input_sentences) == 0:  # if the list is empty, skip the batch
                 continue
             targets = utils.get_target_emb(item_emb, train_target_id)
+            
+            # Get user GNN embeddings for fusion
+            user_gnn_emb = user_emb[user_id].to(device)
+            
+            # Get aggregated history item GNN embeddings for fusion (NOT target item!)
+            history_item_gnn_emb = utils.get_history_item_emb(item_emb, train_history_ids).to(device)
+            
             input_encoding = tokenizer(input_sentences, return_tensors='pt', max_length=args.source_length, padding="max_length", truncation=True)  # padding to max model input length
             input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
             decoder_input_encoding = tokenizer([args.decoder_prepend for _ in range(len(train_target_cb_id))], return_tensors="pt", max_length=args.target_length, padding="max_length", truncation=True)
@@ -140,7 +174,10 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
 
             outputs = t5(input_ids=input_ids.to(device), attention_mask=attention_mask.to(device), decoder_input_ids=decoder_input_ids.to(device))
             last_hidden_states = outputs.last_hidden_state  # shape = [batch, max_source_length, embedding]
-            predicts = linear_projection(last_hidden_states)  # predicts = [batch, emb],
+            llm_output = linear_projection(last_hidden_states)  # predicts = [batch, emb]
+            
+            # Apply fusion module to combine LLM output with user and history item GNN features
+            predicts = fusion_module(llm_output, user_gnn_emb, history_item_gnn_emb)
 
             # negative sampling, 1:1
             current_batch = predicts.shape[0]
@@ -173,10 +210,18 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
             n_batch = 0
             t5.eval()
             linear_projection.eval()
+            fusion_module.eval()
             for i, sample in enumerate(tqdm(valid_rec_loader)):
-                user_id, item_id, target_id, user_cb_id, item_cb_id, target_cb_id = sample
+                user_id, item_id, target_id, user_cb_id, item_cb_id, target_cb_id, history_ids = sample
                 input_sentences = utils.prompt(user_cb_id, item_cb_id)
                 targets = utils.get_target_emb(item_emb, target_id)
+                
+                # Get user GNN embeddings for fusion
+                user_gnn_emb = user_emb[user_id].to(device)
+                
+                # Get aggregated history item GNN embeddings for fusion (NOT target item!)
+                history_item_gnn_emb = utils.get_history_item_emb(item_emb, history_ids).to(device)
+                
                 input_encoding = tokenizer(input_sentences, return_tensors='pt', max_length=args.source_length, padding="max_length", truncation=True)
                 input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
                 decoder_input_encoding = tokenizer([args.decoder_prepend for _ in range(len(target_cb_id))], return_tensors="pt", max_length=args.target_length, padding="max_length", truncation=True)
@@ -186,7 +231,10 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
                 with torch.no_grad():
                     outputs = t5(input_ids=input_ids.to(device), attention_mask=attention_mask.to(device), decoder_input_ids=decoder_input_ids.to(device))
                     last_hidden_states = outputs.last_hidden_state  # shape = [batch, max_source_length, embedding]
-                    predicts = linear_projection(last_hidden_states)  # shape = [batch, emb]
+                    llm_output = linear_projection(last_hidden_states)  # shape = [batch, emb]
+                    # Apply fusion module with user and history item features
+                    predicts = fusion_module(llm_output, user_gnn_emb, history_item_gnn_emb)
+                    
                 if args.similarity == 'cos':  # default
                     scores = utils.similarity_score(predicts, item_emb, item_id)  # the bigger the better
                     results = torch.argsort(scores, dim=1, descending=True)
@@ -212,6 +260,7 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
                 t5.save_pretrained('../checkpoints/backbone/' + data_name)
                 tokenizer.save_pretrained("../checkpoints/backbone/" + data_name)
                 torch.save(linear_projection.state_dict(), '../checkpoints/backbone/'  + data_name + '/projection.pt')
+                torch.save(fusion_module.state_dict(), '../checkpoints/backbone/'  + data_name + '/fusion.pt')
 
             metric_output = torch.stack(metric_list, dim=0)
             metric_save = pd.DataFrame(metric_output.detach().cpu().numpy(), columns=['hit@%s' % args.k, 'ncdg@%s' % args.k])

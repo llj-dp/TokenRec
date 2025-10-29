@@ -23,18 +23,43 @@ def backbone(data_name, test_rec_loader, user_emb, item_emb, item_num, args, dev
     t5 = T5Model.from_pretrained('../checkpoints/backbone/' + data_name)
     tokenizer = T5Tokenizer.from_pretrained("../checkpoints/backbone/" + data_name, legacy=False)
     linear_projection.load_state_dict(torch.load('../checkpoints/backbone/' + data_name +'/projection.pt'))
+    
+    # Initialize fusion module
+    fusion_module = model.GNNLLMFusion(
+        llm_dim=item_emb.shape[1], 
+        gnn_dim=item_emb.shape[1],
+        hidden_dim=128,
+        num_heads=4
+    )
+    # Try to load fusion module if it exists
+    try:
+        fusion_module.load_state_dict(torch.load('../checkpoints/backbone/' + data_name +'/fusion.pt'))
+        print('Loaded fusion module for GNN-LLM integration')
+        use_fusion = True
+    except:
+        print('Warning: Fusion module not found, using standard prediction')
+        use_fusion = False
 
     t5.to(device)
     linear_projection.to(device)
+    fusion_module.to(device)
 
     t5.eval()
     linear_projection.eval()
+    fusion_module.eval()
     n_batch = 0
     metrics = torch.zeros([4, 2]).to(device)
     for i, data in enumerate(tqdm(test_rec_loader)):
-        user_id, item_id, target_id, user_cb_id, item_cb_id, target_cb_id = data
+        user_id, item_id, target_id, user_cb_id, item_cb_id, target_cb_id, history_ids = data
         input_sentences = utils.prompt(user_cb_id, item_cb_id, is_test=True, is_unseen=args.is_unseen)
         # target = utils.get_target_emb(item_emb, target_id)
+        
+        # Get user GNN embeddings for fusion
+        user_gnn_emb = user_emb[user_id].to(device)
+        
+        # Get aggregated history item GNN embeddings for fusion (NOT target item!)
+        history_item_gnn_emb = utils.get_history_item_emb(item_emb, history_ids).to(device)
+        
         if i == 0:
             print('Input Example =', input_sentences[0])
         input_encoding = tokenizer(input_sentences, return_tensors='pt', max_length=max_source_length, padding="max_length", truncation=True)
@@ -45,7 +70,14 @@ def backbone(data_name, test_rec_loader, user_emb, item_emb, item_num, args, dev
 
         outputs = t5(input_ids=input_ids.to(device), attention_mask=attention_mask.to(device), decoder_input_ids=decoder_input_ids.to(device))
         last_hidden_states = outputs.last_hidden_state  # shape = [batch, max_source_length, embedding]
-        predicts = linear_projection(last_hidden_states)
+        llm_output = linear_projection(last_hidden_states)
+        
+        # Apply fusion if available
+        if use_fusion:
+            predicts = fusion_module(llm_output, user_gnn_emb, history_item_gnn_emb)
+        else:
+            predicts = llm_output
+            predicts = llm_output
 
         if args.similarity == 'cos':
             scores = utils.similarity_score(predicts, item_emb, item_id)
