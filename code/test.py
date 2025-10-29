@@ -50,15 +50,15 @@ def backbone(data_name, test_rec_loader, user_emb, item_emb, item_num, args, dev
     n_batch = 0
     metrics = torch.zeros([4, 2]).to(device)
     for i, data in enumerate(tqdm(test_rec_loader)):
-        user_id, item_id, target_id, user_cb_id, item_cb_id, target_cb_id = data
+        user_id, item_id, target_id, user_cb_id, item_cb_id, target_cb_id, history_ids = data
         input_sentences = utils.prompt(user_cb_id, item_cb_id, is_test=True, is_unseen=args.is_unseen)
         # target = utils.get_target_emb(item_emb, target_id)
         
         # Get user GNN embeddings for fusion
         user_gnn_emb = user_emb[user_id].to(device)
         
-        # Get target item GNN embeddings for fusion
-        target_item_gnn_emb = item_emb[target_id].to(device)
+        # Get aggregated history item GNN embeddings for fusion (NOT target item!)
+        history_item_gnn_emb = utils.get_history_item_emb(item_emb, history_ids).to(device)
         
         if i == 0:
             print('Input Example =', input_sentences[0])
@@ -74,7 +74,7 @@ def backbone(data_name, test_rec_loader, user_emb, item_emb, item_num, args, dev
         
         # Apply fusion if available
         if use_fusion:
-            predicts = fusion_module(llm_output, user_gnn_emb, target_item_gnn_emb)
+            predicts = fusion_module(llm_output, user_gnn_emb, history_item_gnn_emb)
         else:
             predicts = llm_output
             predicts = llm_output

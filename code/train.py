@@ -153,7 +153,7 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
         batch_record = 0
         for i, sample in enumerate(train_rec_loader):
             # train
-            user_id, train_target_id, valid_target_id, user_cb_id, train_item_cb_id, train_target_cb_id, valid_item_cb_id, valid_target_cb_id = sample  # tuple text sequence [batch]
+            user_id, train_target_id, valid_target_id, user_cb_id, train_item_cb_id, train_target_cb_id, valid_item_cb_id, valid_target_cb_id, train_history_ids, valid_history_ids = sample  # tuple text sequence [batch]
             train_batch = len(train_item_cb_id)
             input_sentences = utils.prompt(user_cb_id, train_item_cb_id)
             if len(input_sentences) == 0:  # if the list is empty, skip the batch
@@ -163,8 +163,8 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
             # Get user GNN embeddings for fusion
             user_gnn_emb = user_emb[user_id].to(device)
             
-            # Get target item GNN embeddings for fusion
-            target_item_gnn_emb = item_emb[train_target_id].to(device)
+            # Get aggregated history item GNN embeddings for fusion (NOT target item!)
+            history_item_gnn_emb = utils.get_history_item_emb(item_emb, train_history_ids).to(device)
             
             input_encoding = tokenizer(input_sentences, return_tensors='pt', max_length=args.source_length, padding="max_length", truncation=True)  # padding to max model input length
             input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
@@ -176,8 +176,8 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
             last_hidden_states = outputs.last_hidden_state  # shape = [batch, max_source_length, embedding]
             llm_output = linear_projection(last_hidden_states)  # predicts = [batch, emb]
             
-            # Apply fusion module to combine LLM output with user and item GNN features
-            predicts = fusion_module(llm_output, user_gnn_emb, target_item_gnn_emb)
+            # Apply fusion module to combine LLM output with user and history item GNN features
+            predicts = fusion_module(llm_output, user_gnn_emb, history_item_gnn_emb)
 
             # negative sampling, 1:1
             current_batch = predicts.shape[0]
@@ -212,15 +212,15 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
             linear_projection.eval()
             fusion_module.eval()
             for i, sample in enumerate(tqdm(valid_rec_loader)):
-                user_id, item_id, target_id, user_cb_id, item_cb_id, target_cb_id = sample
+                user_id, item_id, target_id, user_cb_id, item_cb_id, target_cb_id, history_ids = sample
                 input_sentences = utils.prompt(user_cb_id, item_cb_id)
                 targets = utils.get_target_emb(item_emb, target_id)
                 
                 # Get user GNN embeddings for fusion
                 user_gnn_emb = user_emb[user_id].to(device)
                 
-                # Get target item GNN embeddings for fusion
-                target_item_gnn_emb = item_emb[target_id].to(device)
+                # Get aggregated history item GNN embeddings for fusion (NOT target item!)
+                history_item_gnn_emb = utils.get_history_item_emb(item_emb, history_ids).to(device)
                 
                 input_encoding = tokenizer(input_sentences, return_tensors='pt', max_length=args.source_length, padding="max_length", truncation=True)
                 input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
@@ -232,8 +232,8 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
                     outputs = t5(input_ids=input_ids.to(device), attention_mask=attention_mask.to(device), decoder_input_ids=decoder_input_ids.to(device))
                     last_hidden_states = outputs.last_hidden_state  # shape = [batch, max_source_length, embedding]
                     llm_output = linear_projection(last_hidden_states)  # shape = [batch, emb]
-                    # Apply fusion module with user and item features
-                    predicts = fusion_module(llm_output, user_gnn_emb, target_item_gnn_emb)
+                    # Apply fusion module with user and history item features
+                    predicts = fusion_module(llm_output, user_gnn_emb, history_item_gnn_emb)
                     
                 if args.similarity == 'cos':  # default
                     scores = utils.similarity_score(predicts, item_emb, item_id)  # the bigger the better

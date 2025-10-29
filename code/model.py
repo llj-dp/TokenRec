@@ -354,7 +354,8 @@ class GNNLLMFusion(nn.Module):
         Args:
             llm_output: [batch_size, llm_dim] - LLM predicted features
             user_gnn_emb: [batch_size, gnn_dim] - User GNN embeddings
-            item_gnn_emb: [batch_size, gnn_dim] - Item GNN embeddings (optional for backward compatibility)
+            item_gnn_emb: [batch_size, gnn_dim] - Aggregated history item GNN embeddings (NOT target!)
+                                                   Optional for backward compatibility
         Returns:
             fused_output: [batch_size, gnn_dim] - Fused prediction features
         """

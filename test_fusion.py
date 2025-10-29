@@ -5,6 +5,7 @@ import torch
 import sys
 sys.path.append('/home/runner/work/TokenRec/TokenRec/code')
 from model import GNNLLMFusion
+import utils
 
 def test_fusion_module():
     """Test the basic functionality of GNNLLMFusion module"""
@@ -34,12 +35,17 @@ def test_fusion_module():
     # Create sample inputs
     llm_output = torch.randn(batch_size, llm_dim)
     user_gnn_emb = torch.randn(batch_size, gnn_dim)
-    item_gnn_emb = torch.randn(batch_size, gnn_dim)
+    
+    # Simulate history items aggregation
+    item_emb_all = torch.randn(100, gnn_dim)  # 100 total items
+    history_ids_batch = [[1, 5, 10, 15], [2, 7, 12], [3, 8, 13, 18, 22], [4, 9]]
+    history_item_gnn_emb = utils.get_history_item_emb(item_emb_all, history_ids_batch)
     
     print(f"\n✓ Created sample inputs")
     print(f"  - LLM output shape: {llm_output.shape}")
     print(f"  - User GNN embedding shape: {user_gnn_emb.shape}")
-    print(f"  - Item GNN embedding shape: {item_gnn_emb.shape}")
+    print(f"  - History item GNN embedding shape (aggregated): {history_item_gnn_emb.shape}")
+    print(f"  - Example history lengths: {[len(h) for h in history_ids_batch]}")
     
     # Forward pass with only user features (backward compatibility)
     fusion.eval()
@@ -49,11 +55,11 @@ def test_fusion_module():
     print(f"\n✓ Forward pass with user features only successful (backward compatible)")
     print(f"  - Fused output shape: {fused_output_user_only.shape}")
     
-    # Forward pass with both user and item features
+    # Forward pass with both user and aggregated history item features
     with torch.no_grad():
-        fused_output = fusion(llm_output, user_gnn_emb, item_gnn_emb)
+        fused_output = fusion(llm_output, user_gnn_emb, history_item_gnn_emb)
     
-    print(f"\n✓ Forward pass with user and item features successful")
+    print(f"\n✓ Forward pass with user and history item features successful")
     print(f"  - Fused output shape: {fused_output.shape}")
     print(f"  - Expected shape: ({batch_size}, {gnn_dim})")
     
@@ -65,7 +71,7 @@ def test_fusion_module():
     
     # Test with training mode
     fusion.train()
-    fused_output_train = fusion(llm_output, user_gnn_emb, item_gnn_emb)
+    fused_output_train = fusion(llm_output, user_gnn_emb, history_item_gnn_emb)
     
     print(f"\n✓ Training mode forward pass successful")
     
@@ -90,8 +96,10 @@ def test_fusion_module():
     print("\n" + "="*60)
     print("All tests passed! ✓")
     print("="*60)
-    print("\nEnhancements:")
-    print("  - Now supports fusion with both user AND item GNN features")
+    print("\n✨ Key Features:")
+    print("  - Fuses user AND aggregated history item GNN features")
+    print("  - History items are aggregated (mean pooling)")
+    print("  - NO data leakage: target item is NOT used!")
     print("  - Backward compatible: works with only user features")
     print("  - Separate attention and gating for user and item")
     
