@@ -78,6 +78,35 @@ def group_model_params(model1, model2, decay):
 	return grouped_params
 
 
+def group_model_params_fusion(model1, model2, fusion_module, decay):
+	"""Group parameters for T5, projection layer, and fusion module"""
+	grouped_params = [
+            {
+                "params": [
+                    p
+                    for n, p in model1.named_parameters()
+                ],
+                "weight_decay": decay,
+            },
+            {
+                "params": [
+                    p
+                    for n, p in model2.named_parameters()
+                ],
+                "weight_decay": decay,
+            },
+            {
+                "params": [
+                    p
+                    for n, p in fusion_module.named_parameters()
+                ],
+                "weight_decay": decay,
+            },
+        ]
+
+	return grouped_params
+
+
 def group_model_emb_params(model1, model2, emb, decay):
 	grouped_params = [
             {

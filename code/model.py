@@ -287,3 +287,90 @@ class projection(nn.Module):
         x = self.relu(self.dropout(self.l1(x)))
         x = self.l2(x)
         return x
+
+
+class GNNLLMFusion(nn.Module):
+    """
+    Deep fusion module that integrates LLM outputs with user and item GNN features.
+    Uses multi-head attention and gating mechanisms for adaptive feature combination.
+    """
+    def __init__(self, llm_dim, gnn_dim, hidden_dim=128, num_heads=4, dropout=0.2):
+        super(GNNLLMFusion, self).__init__()
+        self.llm_dim = llm_dim
+        self.gnn_dim = gnn_dim
+        self.hidden_dim = hidden_dim
+        
+        # Project LLM and GNN features to common dimension
+        self.llm_proj = nn.Linear(llm_dim, hidden_dim)
+        self.user_gnn_proj = nn.Linear(gnn_dim, hidden_dim)
+        
+        # Multi-head cross-attention: LLM attends to user GNN features
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=hidden_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+        
+        # Gating mechanism for adaptive fusion
+        self.gate_llm = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Sigmoid()
+        )
+        
+        # Feature transformation layers
+        self.fusion_transform = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, gnn_dim)
+        )
+        
+        # Residual connection weight
+        self.residual_weight = nn.Parameter(torch.tensor(0.5))
+        
+    def forward(self, llm_output, user_gnn_emb):
+        """
+        Args:
+            llm_output: [batch_size, llm_dim] - LLM predicted features
+            user_gnn_emb: [batch_size, gnn_dim] - User GNN embeddings
+        Returns:
+            fused_output: [batch_size, gnn_dim] - Fused prediction features
+        """
+        batch_size = llm_output.shape[0]
+        
+        # Project to common dimension
+        llm_feat = self.llm_proj(llm_output)  # [batch, hidden_dim]
+        user_feat = self.user_gnn_proj(user_gnn_emb)  # [batch, hidden_dim]
+        
+        # Add sequence dimension for attention
+        llm_feat_seq = llm_feat.unsqueeze(1)  # [batch, 1, hidden_dim]
+        user_feat_seq = user_feat.unsqueeze(1)  # [batch, 1, hidden_dim]
+        
+        # Cross-attention: LLM features attend to user GNN features
+        attn_output, _ = self.cross_attention(
+            query=llm_feat_seq,
+            key=user_feat_seq,
+            value=user_feat_seq
+        )
+        attn_output = attn_output.squeeze(1)  # [batch, hidden_dim]
+        
+        # Concatenate for gating
+        combined = torch.cat([llm_feat, attn_output], dim=-1)  # [batch, hidden_dim*2]
+        
+        # Adaptive gating
+        gate = self.gate_llm(combined)  # [batch, hidden_dim]
+        gated_feat = gate * llm_feat + (1 - gate) * attn_output
+        
+        # Combine gated features with user features
+        fusion_input = torch.cat([gated_feat, user_feat], dim=-1)  # [batch, hidden_dim*2]
+        
+        # Transform to output dimension
+        fused_output = self.fusion_transform(fusion_input)  # [batch, gnn_dim]
+        
+        # Residual connection with original LLM output (projected to gnn_dim if needed)
+        if llm_output.shape[-1] == self.gnn_dim:
+            fused_output = self.residual_weight * fused_output + (1 - self.residual_weight) * llm_output
+        
+        return fused_output
