@@ -26,7 +26,7 @@ Please download the checkpoints at [Google Drive](https://drive.google.com/drive
 
 1. **Go to the path of "code"**
 ```
-python cd code
+cd code
 ```
 
 
