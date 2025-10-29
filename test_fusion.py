@@ -34,17 +34,26 @@ def test_fusion_module():
     # Create sample inputs
     llm_output = torch.randn(batch_size, llm_dim)
     user_gnn_emb = torch.randn(batch_size, gnn_dim)
+    item_gnn_emb = torch.randn(batch_size, gnn_dim)
     
     print(f"\n✓ Created sample inputs")
     print(f"  - LLM output shape: {llm_output.shape}")
     print(f"  - User GNN embedding shape: {user_gnn_emb.shape}")
+    print(f"  - Item GNN embedding shape: {item_gnn_emb.shape}")
     
-    # Forward pass
+    # Forward pass with only user features (backward compatibility)
     fusion.eval()
     with torch.no_grad():
-        fused_output = fusion(llm_output, user_gnn_emb)
+        fused_output_user_only = fusion(llm_output, user_gnn_emb)
     
-    print(f"\n✓ Forward pass successful")
+    print(f"\n✓ Forward pass with user features only successful (backward compatible)")
+    print(f"  - Fused output shape: {fused_output_user_only.shape}")
+    
+    # Forward pass with both user and item features
+    with torch.no_grad():
+        fused_output = fusion(llm_output, user_gnn_emb, item_gnn_emb)
+    
+    print(f"\n✓ Forward pass with user and item features successful")
     print(f"  - Fused output shape: {fused_output.shape}")
     print(f"  - Expected shape: ({batch_size}, {gnn_dim})")
     
@@ -56,7 +65,7 @@ def test_fusion_module():
     
     # Test with training mode
     fusion.train()
-    fused_output_train = fusion(llm_output, user_gnn_emb)
+    fused_output_train = fusion(llm_output, user_gnn_emb, item_gnn_emb)
     
     print(f"\n✓ Training mode forward pass successful")
     
@@ -81,6 +90,10 @@ def test_fusion_module():
     print("\n" + "="*60)
     print("All tests passed! ✓")
     print("="*60)
+    print("\nEnhancements:")
+    print("  - Now supports fusion with both user AND item GNN features")
+    print("  - Backward compatible: works with only user features")
+    print("  - Separate attention and gating for user and item")
     
     return True
 

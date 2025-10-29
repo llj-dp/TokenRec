@@ -2,7 +2,7 @@
 
 ## Overview
 
-This enhancement adds a deep fusion mechanism that integrates LLM (Large Language Model) outputs with GNN (Graph Neural Network) features for improved recommendation performance.
+This enhancement adds a deep fusion mechanism that integrates LLM (Large Language Model) outputs with **both user and item** GNN (Graph Neural Network) features for improved recommendation performance.
 
 ## Problem Statement
 
@@ -22,10 +22,12 @@ The original TokenRec system:
 
 The `GNNLLMFusion` module implements a sophisticated fusion mechanism with:
 
-1. **Feature Projection**: Projects LLM and GNN features to a common hidden dimension
-2. **Cross-Attention**: Multi-head attention where LLM features attend to user GNN features
-3. **Adaptive Gating**: Learned gates to balance LLM and attended GNN contributions
-4. **Feature Combination**: Concatenates gated features with user features
+1. **Feature Projection**: Projects LLM, user GNN, and item GNN features to a common hidden dimension
+2. **Dual Cross-Attention**: 
+   - Multi-head attention where LLM features attend to user GNN features
+   - Multi-head attention where LLM features attend to item GNN features
+3. **Adaptive Gating**: Separate learned gates to balance LLM with user and item GNN contributions
+4. **Feature Combination**: Concatenates all gated features (user, item, and LLM)
 5. **Output Transformation**: Projects fused features back to item embedding space
 6. **Residual Connection**: Preserves original LLM information via weighted residual
 
@@ -35,8 +37,11 @@ The `GNNLLMFusion` module implements a sophisticated fusion mechanism with:
 class GNNLLMFusion(nn.Module):
     - llm_proj: Projects LLM output to hidden dimension
     - user_gnn_proj: Projects user GNN embedding to hidden dimension
-    - cross_attention: Multi-head attention (4 heads by default)
-    - gate_llm: Gating mechanism for adaptive fusion
+    - item_gnn_proj: Projects item GNN embedding to hidden dimension
+    - user_cross_attention: Multi-head attention for user features (4 heads by default)
+    - item_cross_attention: Multi-head attention for item features (4 heads by default)
+    - gate_user: Gating mechanism for adaptive user fusion
+    - gate_item: Gating mechanism for adaptive item fusion
     - fusion_transform: Transform combined features to output space
     - residual_weight: Learnable weight for residual connection
 ```
@@ -44,21 +49,28 @@ class GNNLLMFusion(nn.Module):
 ### Forward Pass
 
 ```
-Input: llm_output [batch, llm_dim], user_gnn_emb [batch, gnn_dim]
+Input: 
+  - llm_output [batch, llm_dim]: LLM predicted features
+  - user_gnn_emb [batch, gnn_dim]: User GNN embeddings
+  - item_gnn_emb [batch, gnn_dim]: Item GNN embeddings (optional)
 
 1. Project to common space:
    llm_feat = llm_proj(llm_output)
    user_feat = user_gnn_proj(user_gnn_emb)
+   item_feat = item_gnn_proj(item_gnn_emb)  # if provided
 
-2. Cross-attention:
-   attn_output = cross_attention(query=llm_feat, key=user_feat, value=user_feat)
+2. User Cross-attention:
+   user_attn = user_cross_attention(query=llm_feat, key=user_feat, value=user_feat)
+   user_gate = sigmoid(linear([llm_feat, user_attn]))
+   user_gated = user_gate * llm_feat + (1 - user_gate) * user_attn
 
-3. Adaptive gating:
-   gate = sigmoid(linear([llm_feat, attn_output]))
-   gated_feat = gate * llm_feat + (1 - gate) * attn_output
+3. Item Cross-attention (if item features provided):
+   item_attn = item_cross_attention(query=llm_feat, key=item_feat, value=item_feat)
+   item_gate = sigmoid(linear([llm_feat, item_attn]))
+   item_gated = item_gate * llm_feat + (1 - item_gate) * item_attn
 
 4. Feature fusion:
-   fusion_input = [gated_feat, user_feat]
+   fusion_input = [user_gated, item_gated, llm_feat]  # or [user_gated, user_feat, llm_feat] if no item
    fused_output = fusion_transform(fusion_input)
 
 5. Residual connection:
@@ -74,8 +86,9 @@ Output: fused_output [batch, gnn_dim]
 1. **Initialization**: Create fusion module alongside T5 and projection layer
 2. **Forward Pass**: 
    - Extract user GNN embeddings from user_emb[user_id]
+   - Extract target item GNN embeddings from item_emb[target_id]
    - Get LLM output from projection layer
-   - Apply fusion: `predicts = fusion_module(llm_output, user_gnn_emb)`
+   - Apply fusion: `predicts = fusion_module(llm_output, user_gnn_emb, target_item_gnn_emb)`
 3. **Optimization**: Include fusion parameters in optimizer
 4. **Checkpointing**: Save fusion module state_dict
 
@@ -83,7 +96,7 @@ Output: fused_output [batch, gnn_dim]
 
 1. **Loading**: Load fusion module from checkpoint
 2. **Fallback**: Gracefully handle missing fusion checkpoint
-3. **Inference**: Apply same fusion mechanism as training
+3. **Inference**: Apply same fusion mechanism as training with both user and item embeddings
 
 ### Utilities (utils.py)
 
@@ -94,11 +107,13 @@ Added `group_model_params_fusion()` to properly group parameters from:
 
 ## Benefits
 
-1. **Semantic + Structural**: Combines LLM's semantic understanding with GNN's structural knowledge
-2. **Adaptive Fusion**: Learns to balance contributions based on context
-3. **Attention Mechanism**: Captures relevant user features for each prediction
-4. **Residual Learning**: Preserves original LLM information
-5. **Backward Compatible**: Can load models without fusion (falls back to standard prediction)
+1. **Semantic + Structural**: Combines LLM's semantic understanding with GNN's structural knowledge from both user and item perspectives
+2. **Dual Perspective Fusion**: Separately processes user preferences and item characteristics before combining
+3. **Adaptive Fusion**: Learns to balance contributions from LLM, user, and item based on context
+4. **Attention Mechanism**: Captures relevant user and item features for each prediction
+5. **Residual Learning**: Preserves original LLM information
+6. **Backward Compatible**: Can load models without fusion (falls back to standard prediction)
+7. **Flexible**: Item features are optional - works with only user features for backward compatibility
 
 ## Usage
 

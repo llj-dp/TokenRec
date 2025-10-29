@@ -5,18 +5,19 @@ A LLM-based Recommender System with user&amp;item Tokenizers and a generative re
 
 ## 🆕 Enhanced with Deep GNN-LLM Fusion
 
-This enhanced version includes a **deep fusion mechanism** that integrates LLM outputs with GNN (Graph Neural Network) features for improved recommendation quality. The fusion module uses multi-head cross-attention and adaptive gating to effectively combine:
+This enhanced version includes a **deep fusion mechanism** that integrates LLM outputs with **both user and item** GNN (Graph Neural Network) features for improved recommendation quality. The fusion module uses dual multi-head cross-attention and adaptive gating to effectively combine:
 - **Semantic understanding** from LLM (learned from tokenized sequences)
-- **Structural information** from GNN (user/item graph embeddings)
+- **User structural information** from GNN (user graph embeddings)
+- **Item structural information** from GNN (item graph embeddings)
 
 📖 **See [GNN_LLM_FUSION.md](GNN_LLM_FUSION.md) for detailed technical documentation**
 
 ### Key Improvements
-- ✅ Multi-head cross-attention between LLM and user GNN features
-- ✅ Adaptive gating mechanism for dynamic feature balancing
+- ✅ Dual multi-head cross-attention for both user and item GNN features
+- ✅ Separate adaptive gating for user and item feature balancing
 - ✅ Residual connections to preserve original information
 - ✅ Backward compatible with existing checkpoints
-- ✅ 156K additional trainable parameters for deep feature fusion
+- ✅ 363K additional trainable parameters for comprehensive feature fusion
 
 
 

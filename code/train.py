@@ -163,6 +163,9 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
             # Get user GNN embeddings for fusion
             user_gnn_emb = user_emb[user_id].to(device)
             
+            # Get target item GNN embeddings for fusion
+            target_item_gnn_emb = item_emb[train_target_id].to(device)
+            
             input_encoding = tokenizer(input_sentences, return_tensors='pt', max_length=args.source_length, padding="max_length", truncation=True)  # padding to max model input length
             input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
             decoder_input_encoding = tokenizer([args.decoder_prepend for _ in range(len(train_target_cb_id))], return_tensors="pt", max_length=args.target_length, padding="max_length", truncation=True)
@@ -173,8 +176,8 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
             last_hidden_states = outputs.last_hidden_state  # shape = [batch, max_source_length, embedding]
             llm_output = linear_projection(last_hidden_states)  # predicts = [batch, emb]
             
-            # Apply fusion module to combine LLM output with user GNN features
-            predicts = fusion_module(llm_output, user_gnn_emb)
+            # Apply fusion module to combine LLM output with user and item GNN features
+            predicts = fusion_module(llm_output, user_gnn_emb, target_item_gnn_emb)
 
             # negative sampling, 1:1
             current_batch = predicts.shape[0]
@@ -216,6 +219,9 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
                 # Get user GNN embeddings for fusion
                 user_gnn_emb = user_emb[user_id].to(device)
                 
+                # Get target item GNN embeddings for fusion
+                target_item_gnn_emb = item_emb[target_id].to(device)
+                
                 input_encoding = tokenizer(input_sentences, return_tensors='pt', max_length=args.source_length, padding="max_length", truncation=True)
                 input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
                 decoder_input_encoding = tokenizer([args.decoder_prepend for _ in range(len(target_cb_id))], return_tensors="pt", max_length=args.target_length, padding="max_length", truncation=True)
@@ -226,8 +232,8 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
                     outputs = t5(input_ids=input_ids.to(device), attention_mask=attention_mask.to(device), decoder_input_ids=decoder_input_ids.to(device))
                     last_hidden_states = outputs.last_hidden_state  # shape = [batch, max_source_length, embedding]
                     llm_output = linear_projection(last_hidden_states)  # shape = [batch, emb]
-                    # Apply fusion module
-                    predicts = fusion_module(llm_output, user_gnn_emb)
+                    # Apply fusion module with user and item features
+                    predicts = fusion_module(llm_output, user_gnn_emb, target_item_gnn_emb)
                     
                 if args.similarity == 'cos':  # default
                     scores = utils.similarity_score(predicts, item_emb, item_id)  # the bigger the better

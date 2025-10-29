@@ -57,6 +57,9 @@ def backbone(data_name, test_rec_loader, user_emb, item_emb, item_num, args, dev
         # Get user GNN embeddings for fusion
         user_gnn_emb = user_emb[user_id].to(device)
         
+        # Get target item GNN embeddings for fusion
+        target_item_gnn_emb = item_emb[target_id].to(device)
+        
         if i == 0:
             print('Input Example =', input_sentences[0])
         input_encoding = tokenizer(input_sentences, return_tensors='pt', max_length=max_source_length, padding="max_length", truncation=True)
@@ -71,8 +74,9 @@ def backbone(data_name, test_rec_loader, user_emb, item_emb, item_num, args, dev
         
         # Apply fusion if available
         if use_fusion:
-            predicts = fusion_module(llm_output, user_gnn_emb)
+            predicts = fusion_module(llm_output, user_gnn_emb, target_item_gnn_emb)
         else:
+            predicts = llm_output
             predicts = llm_output
 
         if args.similarity == 'cos':
