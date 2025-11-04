@@ -56,5 +56,11 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=2024, help='random seed')
     parser.add_argument('--dataset', type=str, default='LastFM',
                         help="available datasets: [Beauty, LastFM, ML1M, Clothing]")
+    
+    # --------------- multi-GPU --------------------
+    parser.add_argument('--use_multi_gpu', action='store_true', default=False,
+                        help="whether to use multiple GPUs for training")
+    parser.add_argument('--gpu_ids', type=str, default='0,1',
+                        help="comma-separated list of GPU IDs to use (e.g., '0,1,2,3')")
 
     return parser.parse_args()

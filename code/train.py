@@ -88,7 +88,7 @@ def vqvae(model, model_name, device, co_emb, n_embedding, kmean_epoch=50, m_book
             print(f'VQ: epoch {e} train_loss: {total_loss} valid_loss: {valid_loss} elapsed {(toc - tic):.2f}s')
 
 
-def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, item_num, args, device):
+def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, item_num, args, device, gpu_ids=None):
     # read checkpoints
     if args.train_from_checkpoint is True:
         linear_projection = model.projection(input_dim=512, output_dim=item_emb.shape[1], target_length=args.target_length)
@@ -113,6 +113,12 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
     loss_func = torch.nn.CosineEmbeddingLoss()
     t5.to(device)
     linear_projection.to(device)
+    
+    # Wrap models with DataParallel for multi-GPU training
+    if gpu_ids is not None and len(gpu_ids) > 1:
+        print(f"Wrapping models with DataParallel for GPUs: {gpu_ids}")
+        t5 = nn.DataParallel(t5, device_ids=gpu_ids)
+        linear_projection = nn.DataParallel(linear_projection, device_ids=gpu_ids)
 
     # ------------------------ training --------------------------------
     max_epoch = args.epochs
@@ -136,7 +142,9 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
             input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
             decoder_input_encoding = tokenizer([args.decoder_prepend for _ in range(len(train_target_cb_id))], return_tensors="pt", max_length=args.target_length, padding="max_length", truncation=True)
             decoder_input_ids, decoder_attention_mask = decoder_input_encoding.input_ids, decoder_input_encoding.attention_mask
-            decoder_input_ids = t5._shift_right(decoder_input_ids)
+            # Access the underlying module for _shift_right if using DataParallel
+            t5_module = t5.module if hasattr(t5, 'module') else t5
+            decoder_input_ids = t5_module._shift_right(decoder_input_ids)
 
             outputs = t5(input_ids=input_ids.to(device), attention_mask=attention_mask.to(device), decoder_input_ids=decoder_input_ids.to(device))
             last_hidden_states = outputs.last_hidden_state  # shape = [batch, max_source_length, embedding]
@@ -181,7 +189,9 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
                 input_ids, attention_mask = input_encoding.input_ids, input_encoding.attention_mask
                 decoder_input_encoding = tokenizer([args.decoder_prepend for _ in range(len(target_cb_id))], return_tensors="pt", max_length=args.target_length, padding="max_length", truncation=True)
                 decoder_input_ids, decoder_attention_mask = decoder_input_encoding.input_ids, decoder_input_encoding.attention_mask
-                decoder_input_ids = t5._shift_right(decoder_input_ids)
+                # Access the underlying module for _shift_right if using DataParallel
+                t5_module = t5.module if hasattr(t5, 'module') else t5
+                decoder_input_ids = t5_module._shift_right(decoder_input_ids)
 
                 with torch.no_grad():
                     outputs = t5(input_ids=input_ids.to(device), attention_mask=attention_mask.to(device), decoder_input_ids=decoder_input_ids.to(device))
@@ -209,9 +219,12 @@ def backbone(data_name, train_rec_loader, valid_rec_loader, user_emb, item_emb, 
             if torch.mean(metrics/n_batch) > global_metric:
                 global_metric = torch.mean(metrics/n_batch)
                 print('Pass the validation, save checkpoints ...')
-                t5.save_pretrained('../checkpoints/backbone/' + data_name)
+                # Save the underlying module if using DataParallel
+                t5_to_save = t5.module if hasattr(t5, 'module') else t5
+                linear_projection_to_save = linear_projection.module if hasattr(linear_projection, 'module') else linear_projection
+                t5_to_save.save_pretrained('../checkpoints/backbone/' + data_name)
                 tokenizer.save_pretrained("../checkpoints/backbone/" + data_name)
-                torch.save(linear_projection.state_dict(), '../checkpoints/backbone/'  + data_name + '/projection.pt')
+                torch.save(linear_projection_to_save.state_dict(), '../checkpoints/backbone/'  + data_name + '/projection.pt')
 
             metric_output = torch.stack(metric_list, dim=0)
             metric_save = pd.DataFrame(metric_output.detach().cpu().numpy(), columns=['hit@%s' % args.k, 'ncdg@%s' % args.k])

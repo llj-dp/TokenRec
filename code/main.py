@@ -22,7 +22,20 @@ data_name = args.dataset
 print('TokenRec is working on', data_name)
 
 use_cuda = True
-device = torch.device("cuda:" + str(args.cuda) if use_cuda and torch.cuda.is_available() else "cpu")
+# Setup device(s) for training
+if args.use_multi_gpu and torch.cuda.is_available():
+    # Parse GPU IDs
+    gpu_ids = [int(gpu_id.strip()) for gpu_id in args.gpu_ids.split(',')]
+    # Set the primary device as the first GPU in the list
+    device = torch.device("cuda:" + str(gpu_ids[0]))
+    print(f'Using multi-GPU training with GPUs: {gpu_ids}')
+    # Set visible devices
+    import os
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_ids
+else:
+    device = torch.device("cuda:" + str(args.cuda) if use_cuda and torch.cuda.is_available() else "cpu")
+    gpu_ids = None
+    print(f'Using single device: {device}')
 
 if args.vq is True:
     print(device)
@@ -56,7 +69,7 @@ print('item number =', item_num)
 print('user number =', user_emb.shape[0])
 
 if args.no_train == False:
-    train.backbone(data_name, train_rec_loader, valid_rec_loader, user_emb.to(device), item_emb.to(device), item_num, args, device)
+    train.backbone(data_name, train_rec_loader, valid_rec_loader, user_emb.to(device), item_emb.to(device), item_num, args, device, gpu_ids)
 test.backbone(data_name, test_rec_loader, user_emb.to(device), item_emb.to(device), item_num, args, device)
 
 
