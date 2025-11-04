@@ -31,6 +31,22 @@ python main.py --dataset=LastFM --n_token=256 --n_book=3 --train_from_checkpoint
 python main.py --dataset=LastFM --no_train
 ```
 
+## Multi-GPU Training
+
+TokenRec now supports multi-GPU training on a single machine! This can significantly speed up the LLM training phase.
+
+**Example: Train on 2 GPUs (GPU 0 and 1)**
+```
+python main.py --dataset=LastFM --vq --train_vq --vq_model=MQ --n_token=256 --n_book=3 --use_multi_gpu --gpu_ids=0,1
+```
+
+**Example: Train on 4 GPUs with larger batch size**
+```
+python main.py --dataset=LastFM --n_token=256 --n_book=3 --use_multi_gpu --gpu_ids=0,1,2,3 --batch=256
+```
+
+For detailed instructions on multi-GPU training, see [MULTI_GPU_USAGE.md](MULTI_GPU_USAGE.md).
+
 ## Citation
 If this project is helpful to your research, please cite our papers:
 
