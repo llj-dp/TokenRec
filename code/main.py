@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 import sys
+import os
 import train
 from tqdm import tqdm
 import dataset
@@ -30,7 +31,6 @@ if args.use_multi_gpu and torch.cuda.is_available():
     device = torch.device("cuda:" + str(gpu_ids[0]))
     print(f'Using multi-GPU training with GPUs: {gpu_ids}')
     # Set visible devices
-    import os
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_ids
 else:
     device = torch.device("cuda:" + str(args.cuda) if use_cuda and torch.cuda.is_available() else "cpu")

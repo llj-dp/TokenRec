@@ -14,12 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'code'))
 
 from parse import parse_args
 
-def test_single_gpu():
-    """Test single GPU configuration"""
-    print("\n=== Testing Single GPU Configuration ===")
-    sys.argv = ['test', '--dataset=LastFM', '--cuda=0']
-    args = parse_args()
-    
+def setup_device(args):
+    """Helper function to setup device based on arguments"""
     use_cuda = True
     if args.use_multi_gpu and torch.cuda.is_available():
         gpu_ids = [int(gpu_id.strip()) for gpu_id in args.gpu_ids.split(',')]
@@ -29,6 +25,15 @@ def test_single_gpu():
         device = torch.device("cuda:" + str(args.cuda) if use_cuda and torch.cuda.is_available() else "cpu")
         gpu_ids = None
         print(f'Using single device: {device}')
+    return device, gpu_ids
+
+def test_single_gpu():
+    """Test single GPU configuration"""
+    print("\n=== Testing Single GPU Configuration ===")
+    sys.argv = ['test', '--dataset=LastFM', '--cuda=0']
+    args = parse_args()
+    
+    device, gpu_ids = setup_device(args)
     
     print(f"✓ Single GPU test passed")
     print(f"  Device: {device}")
@@ -41,15 +46,7 @@ def test_multi_gpu():
     sys.argv = ['test', '--dataset=LastFM', '--use_multi_gpu', '--gpu_ids=0,1']
     args = parse_args()
     
-    use_cuda = True
-    if args.use_multi_gpu and torch.cuda.is_available():
-        gpu_ids = [int(gpu_id.strip()) for gpu_id in args.gpu_ids.split(',')]
-        device = torch.device("cuda:" + str(gpu_ids[0]))
-        print(f'Using multi-GPU training with GPUs: {gpu_ids}')
-    else:
-        device = torch.device("cuda:" + str(args.cuda) if use_cuda and torch.cuda.is_available() else "cpu")
-        gpu_ids = None
-        print(f'Using single device: {device}')
+    device, gpu_ids = setup_device(args)
     
     print(f"✓ Multi-GPU test passed")
     print(f"  Device: {device}")
@@ -76,15 +73,7 @@ def test_custom_gpu_selection():
     sys.argv = ['test', '--dataset=LastFM', '--use_multi_gpu', '--gpu_ids=1,3']
     args = parse_args()
     
-    use_cuda = True
-    if args.use_multi_gpu and torch.cuda.is_available():
-        gpu_ids = [int(gpu_id.strip()) for gpu_id in args.gpu_ids.split(',')]
-        device = torch.device("cuda:" + str(gpu_ids[0]))
-        print(f'Using multi-GPU training with GPUs: {gpu_ids}')
-    else:
-        device = torch.device("cuda:" + str(args.cuda) if use_cuda and torch.cuda.is_available() else "cpu")
-        gpu_ids = None
-        print(f'Using single device: {device}')
+    device, gpu_ids = setup_device(args)
     
     print(f"✓ Custom GPU selection test passed")
     print(f"  Device: {device}")
