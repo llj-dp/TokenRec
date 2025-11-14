@@ -14,6 +14,7 @@ This enhanced version includes a **deep fusion mechanism** that integrates LLM o
 
 ## 📚 Technical Documentation
 
+- **[QUANTIZATION_EXPLANATION_CN.md](QUANTIZATION_EXPLANATION_CN.md)** - 量化方案中文详解（推荐阅读）
 - **[QUANTIZATION_SCHEME.md](QUANTIZATION_SCHEME.md)** - Comprehensive guide to user and item quantization (MQ vs RQ) / 用户和物品量化方案详解
 - **[GNN_LLM_FUSION.md](GNN_LLM_FUSION.md)** - Deep GNN-LLM fusion mechanism / 深度 GNN-LLM 融合机制
 - **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Implementation summary and technical details / 实现摘要和技术细节
@@ -55,6 +56,11 @@ python main.py --dataset=LastFM --no_train
 5. **Test Fusion Module** (Enhanced)
 ```
 python test_fusion.py
+```
+
+6. **Compare Quantization Schemes** (MQ vs RQ)
+```
+python test_quantization.py
 ```
 
 ## Citation
