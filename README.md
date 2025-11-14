@@ -12,6 +12,12 @@ This enhanced version includes a **deep fusion mechanism** that integrates LLM o
 
 📖 **See [GNN_LLM_FUSION.md](GNN_LLM_FUSION.md) for detailed technical documentation**
 
+## 📚 Technical Documentation
+
+- **[QUANTIZATION_SCHEME.md](QUANTIZATION_SCHEME.md)** - Comprehensive guide to user and item quantization (MQ vs RQ) / 用户和物品量化方案详解
+- **[GNN_LLM_FUSION.md](GNN_LLM_FUSION.md)** - Deep GNN-LLM fusion mechanism / 深度 GNN-LLM 融合机制
+- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Implementation summary and technical details / 实现摘要和技术细节
+
 ### Key Improvements
 - ✅ Dual multi-head cross-attention for both user and item GNN features
 - ✅ Separate adaptive gating for user and item feature balancing
